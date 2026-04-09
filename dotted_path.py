@@ -6,6 +6,9 @@ from environment variables.
 
 import ast
 import os
+import platform
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -254,8 +257,33 @@ def main():
     scope_chain = resolve_scope(file_path, row)
     parts = [module_path] + scope_chain if module_path else scope_chain
     dotted_path = ".".join(parts)
-    # TODO: copy to clipboard
+    copy_to_clipboard(dotted_path)
     print(dotted_path)
+
+
+def copy_to_clipboard(text):
+    """Copy text to the system clipboard. Falls back to stdout-only silently."""
+    # WSL detection
+    is_wsl = "microsoft" in platform.uname().release.lower()
+
+    candidates = []
+    if sys.platform == "darwin":
+        candidates.append(["pbcopy"])
+    elif is_wsl:
+        candidates.append(["clip.exe"])
+    else:
+        # Linux — prefer xclip, fall back to xsel
+        if shutil.which("xclip"):
+            candidates.append(["xclip", "-selection", "clipboard"])
+        if shutil.which("xsel"):
+            candidates.append(["xsel", "--clipboard", "--input"])
+
+    for cmd in candidates:
+        try:
+            subprocess.run(cmd, input=text.encode(), check=True)
+            return
+        except (OSError, subprocess.CalledProcessError):
+            continue
 
 
 if __name__ == "__main__":
