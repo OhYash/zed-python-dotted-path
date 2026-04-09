@@ -7,7 +7,7 @@ Incremental build plan for `dotted_path.py`. Each step is a self-contained commi
 - [x] **1. Scaffold CLI entry point**
   Read `ZED_FILE`, `ZED_ROW`, `ZED_WORKTREE_ROOT` from env. Validate (file exists, row is int). Print error + exit 1 on bad input. Stub `main()`.
 
-- [ ] **2. Project root resolution**
+- [x] **2. Project root resolution**
   Implement the 5-level priority chain:
   1. `[tool.dotted-path]` root in `pyproject.toml`
   2. `[tool.setuptools.packages.find]` where in `pyproject.toml`
