@@ -4,6 +4,7 @@ Invoked as a Zed Task. Reads ZED_FILE, ZED_ROW, and ZED_WORKTREE_ROOT
 from environment variables.
 """
 
+import ast
 import os
 import sys
 from pathlib import Path
@@ -193,13 +194,68 @@ def resolve_project_root(file_path, worktree_root):
     return worktree_root
 
 
+def compute_module_path(file_path, project_root):
+    """Convert file path to dotted module path relative to project root."""
+    try:
+        rel = file_path.relative_to(project_root)
+    except ValueError:
+        # File is outside project root — use filename stem
+        return file_path.stem
+
+    parts = list(rel.with_suffix("").parts)
+    # Strip __init__ from tail
+    if parts and parts[-1] == "__init__":
+        parts.pop()
+    if not parts:
+        # Edge case: project root itself is an __init__.py
+        return file_path.parent.name
+    return ".".join(parts)
+
+
+def resolve_scope(file_path, row):
+    """Parse file and find the class/function scope chain enclosing the given row."""
+    try:
+        source = file_path.read_text(encoding="utf-8")
+    except OSError as e:
+        print(f"Error: cannot read file: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        tree = ast.parse(source, filename=str(file_path))
+    except SyntaxError as e:
+        print(f"Error: cannot parse file: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    scope_chain = []
+    _walk_scope(tree, row, scope_chain)
+    return scope_chain
+
+
+def _walk_scope(node, row, chain):
+    """Recursively find the innermost scope enclosing the row."""
+    for child in ast.iter_child_nodes(node):
+        if not isinstance(child, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        # Use the line of the def/class keyword, not decorators
+        start = child.lineno
+        end = child.end_lineno
+        if end is None:
+            continue
+        if start <= row <= end:
+            chain.append(child.name)
+            _walk_scope(child, row, chain)
+            return
+
+
 def main():
     file_path, row, worktree_root = get_env()
     project_root = resolve_project_root(file_path, worktree_root)
-    # TODO: compute dotted module path
-    # TODO: resolve AST scope at cursor
-    # TODO: combine and copy to clipboard
-    print(f"file={file_path} row={row} root={project_root}")
+    module_path = compute_module_path(file_path, project_root)
+    scope_chain = resolve_scope(file_path, row)
+    parts = [module_path] + scope_chain if module_path else scope_chain
+    dotted_path = ".".join(parts)
+    # TODO: copy to clipboard
+    print(dotted_path)
 
 
 if __name__ == "__main__":

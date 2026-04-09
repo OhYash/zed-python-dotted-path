@@ -17,10 +17,10 @@ Incremental build plan for `dotted_path.py`. Each step is a self-contained commi
 
   `pyproject.toml` search: walk up from `ZED_FILE` to `ZED_WORKTREE_ROOT`, stop at first found.
 
-- [ ] **3. Dotted module path computation**
+- [x] **3. Dotted module path computation**
   Convert file path to dotted module path relative to resolved root. Strip `__init__` from tail. Handle file outside any package (use filename stem).
 
-- [ ] **4. AST scope resolution**
+- [x] **4. AST scope resolution**
   Parse with `ast.parse()`. Walk AST for `ClassDef`, `FunctionDef`, `AsyncFunctionDef` enclosing `ZED_ROW`. Build outermost→innermost chain. Handle nested scopes, decorated functions, module-level cursor.
 
 - [ ] **5. Clipboard copy and output**
