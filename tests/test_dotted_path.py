@@ -143,6 +143,7 @@ class TestResolveProjectRoot(unittest.TestCase):
         self.assertFalse(config["skip_fixtures"])
 
 
+
 class TestComputeModulePath(unittest.TestCase):
     """Tests for file path → dotted module path conversion."""
 

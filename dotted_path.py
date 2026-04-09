@@ -55,21 +55,6 @@ def get_env():
     return file_path.resolve(), row, worktree_root.resolve()
 
 
-def _find_pyproject(file_path, worktree_root):
-    """Walk up from file_path to worktree_root looking for pyproject.toml."""
-    current = file_path.parent
-    while True:
-        candidate = current / "pyproject.toml"
-        if candidate.is_file():
-            return candidate
-        if current == worktree_root:
-            break
-        parent = current.parent
-        if parent == current:
-            break
-        current = parent
-    return None
-
 
 def _parse_toml_value(raw):
     """Minimal TOML string/array parser for the values we care about.
@@ -177,6 +162,22 @@ def _root_from_init_heuristic(file_path, worktree_root):
     return None
 
 
+def _find_pyproject(file_path, worktree_root):
+    """Walk up from file_path to worktree_root looking for pyproject.toml."""
+    current = file_path.parent
+    while True:
+        candidate = current / "pyproject.toml"
+        if candidate.is_file():
+            return candidate
+        if current == worktree_root:
+            break
+        parent = current.parent
+        if parent == current:
+            break
+        current = parent
+    return None
+
+
 def resolve_project_root(file_path, worktree_root):
     """Resolve the Python project root using the 5-level priority chain.
 
@@ -184,7 +185,7 @@ def resolve_project_root(file_path, worktree_root):
     """
     config = {"skip_fixtures": False}
 
-    # Priority 1 & 2: pyproject.toml
+    # Priority 1 & 2: closest pyproject.toml
     pyproject = _find_pyproject(file_path, worktree_root)
     if pyproject:
         parsed = _parse_pyproject(pyproject)
