@@ -26,7 +26,7 @@ Incremental build plan for `dotted_path.py`. Each step is a self-contained commi
 - [x] **5. Clipboard copy and output**
   Combine module path + scope chain. Platform clipboard detection (xclip → xsel → pbcopy → clip.exe → stdout-only fallback). Print result, exit 0/1.
 
-- [ ] **6. Tests**
+- [x] **6. Tests**
   `tests/` with unittest. Cover: env var validation, all 5 root resolution levels, module path edge cases, AST scope cases (nested, async, decorated, module-level), unparseable files. Use temp directories.
 
 ## Dependencies
