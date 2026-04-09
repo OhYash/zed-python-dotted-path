@@ -1,5 +1,6 @@
 """Tests for dotted_path.py."""
 
+import os
 import subprocess
 import sys
 import tempfile
@@ -73,42 +74,42 @@ class TestResolveProjectRoot(unittest.TestCase):
         self._make("pyproject.toml", '[tool.dotted-path]\nroot = "src"\n')
         self._make("src/pkg/__init__.py")
         target = self._make("src/pkg/mod.py")
-        result = dotted_path.resolve_project_root(target.resolve(), self.root.resolve())
-        self.assertEqual(result, (self.root / "src").resolve())
+        root, _ = dotted_path.resolve_project_root(target.resolve(), self.root.resolve())
+        self.assertEqual(root, (self.root / "src").resolve())
 
     def test_priority2_setuptools_where(self):
         self._make("pyproject.toml",
                     '[tool.setuptools.packages.find]\nwhere = ["src"]\n')
         self._make("src/pkg/__init__.py")
         target = self._make("src/pkg/mod.py")
-        result = dotted_path.resolve_project_root(target.resolve(), self.root.resolve())
-        self.assertEqual(result, (self.root / "src").resolve())
+        root, _ = dotted_path.resolve_project_root(target.resolve(), self.root.resolve())
+        self.assertEqual(root, (self.root / "src").resolve())
 
     def test_priority3_manage_py(self):
         self._make("manage.py")
         self._make("myapp/__init__.py")
         target = self._make("myapp/views.py")
-        result = dotted_path.resolve_project_root(target.resolve(), self.root.resolve())
-        self.assertEqual(result, self.root.resolve())
+        root, _ = dotted_path.resolve_project_root(target.resolve(), self.root.resolve())
+        self.assertEqual(root, self.root.resolve())
 
     def test_priority3_setup_py(self):
         self._make("setup.py")
         self._make("pkg/__init__.py")
         target = self._make("pkg/mod.py")
-        result = dotted_path.resolve_project_root(target.resolve(), self.root.resolve())
-        self.assertEqual(result, self.root.resolve())
+        root, _ = dotted_path.resolve_project_root(target.resolve(), self.root.resolve())
+        self.assertEqual(root, self.root.resolve())
 
     def test_priority4_init_heuristic(self):
         self._make("src/pkg/__init__.py")
         self._make("src/pkg/sub/__init__.py")
         target = self._make("src/pkg/sub/mod.py")
-        result = dotted_path.resolve_project_root(target.resolve(), self.root.resolve())
-        self.assertEqual(result, (self.root / "src").resolve())
+        root, _ = dotted_path.resolve_project_root(target.resolve(), self.root.resolve())
+        self.assertEqual(root, (self.root / "src").resolve())
 
     def test_priority5_worktree_fallback(self):
         target = self._make("scripts/run.py")
-        result = dotted_path.resolve_project_root(target.resolve(), self.root.resolve())
-        self.assertEqual(result, self.root.resolve())
+        root, _ = dotted_path.resolve_project_root(target.resolve(), self.root.resolve())
+        self.assertEqual(root, self.root.resolve())
 
     def test_pyproject_without_config_falls_through(self):
         """pyproject.toml exists but has no relevant config — fall through."""
@@ -116,9 +117,9 @@ class TestResolveProjectRoot(unittest.TestCase):
         self._make("manage.py")
         self._make("app/__init__.py")
         target = self._make("app/mod.py")
-        result = dotted_path.resolve_project_root(target.resolve(), self.root.resolve())
+        root, _ = dotted_path.resolve_project_root(target.resolve(), self.root.resolve())
         # Should find manage.py (priority 3), not worktree root
-        self.assertEqual(result, self.root.resolve())
+        self.assertEqual(root, self.root.resolve())
 
     def test_monorepo_closest_pyproject(self):
         """In a monorepo, the closest pyproject.toml to the file wins."""
@@ -126,8 +127,20 @@ class TestResolveProjectRoot(unittest.TestCase):
         self._make("services/api/pyproject.toml", '[tool.dotted-path]\nroot = "src"\n')
         self._make("services/api/src/api/__init__.py")
         target = self._make("services/api/src/api/views.py")
-        result = dotted_path.resolve_project_root(target.resolve(), self.root.resolve())
-        self.assertEqual(result, (self.root / "services/api/src").resolve())
+        root, _ = dotted_path.resolve_project_root(target.resolve(), self.root.resolve())
+        self.assertEqual(root, (self.root / "services/api/src").resolve())
+
+    def test_skip_fixtures_config(self):
+        self._make("pyproject.toml",
+                    '[tool.dotted-path]\nroot = "."\nskip_fixtures = true\n')
+        target = self._make("mod.py")
+        _, config = dotted_path.resolve_project_root(target.resolve(), self.root.resolve())
+        self.assertTrue(config["skip_fixtures"])
+
+    def test_skip_fixtures_default_false(self):
+        target = self._make("mod.py")
+        _, config = dotted_path.resolve_project_root(target.resolve(), self.root.resolve())
+        self.assertFalse(config["skip_fixtures"])
 
 
 class TestComputeModulePath(unittest.TestCase):
@@ -227,6 +240,57 @@ class TestResolveScope(unittest.TestCase):
             dotted_path.resolve_scope(f, 1)
 
 
+class TestStripFixtures(unittest.TestCase):
+    """Tests for fixture method stripping."""
+
+    def test_strips_setUp(self):
+        self.assertEqual(
+            dotted_path.strip_fixtures(["TestFoo", "setUp"]),
+            ["TestFoo"],
+        )
+
+    def test_strips_tearDown(self):
+        self.assertEqual(
+            dotted_path.strip_fixtures(["TestFoo", "tearDown"]),
+            ["TestFoo"],
+        )
+
+    def test_strips_setUpClass(self):
+        self.assertEqual(
+            dotted_path.strip_fixtures(["TestFoo", "setUpClass"]),
+            ["TestFoo"],
+        )
+
+    def test_strips_pytest_setup_method(self):
+        self.assertEqual(
+            dotted_path.strip_fixtures(["TestFoo", "setup_method"]),
+            ["TestFoo"],
+        )
+
+    def test_keeps_test_method(self):
+        self.assertEqual(
+            dotted_path.strip_fixtures(["TestFoo", "test_bar"]),
+            ["TestFoo", "test_bar"],
+        )
+
+    def test_keeps_non_test_class(self):
+        """setUp in a non-Test class is not stripped."""
+        self.assertEqual(
+            dotted_path.strip_fixtures(["MyClass", "setUp"]),
+            ["MyClass", "setUp"],
+        )
+
+    def test_keeps_module_level_fixture_name(self):
+        """A top-level function named setUp is not stripped."""
+        self.assertEqual(
+            dotted_path.strip_fixtures(["setUp"]),
+            ["setUp"],
+        )
+
+    def test_empty_chain(self):
+        self.assertEqual(dotted_path.strip_fixtures([]), [])
+
+
 class TestEndToEnd(unittest.TestCase):
     """End-to-end tests running the script as a subprocess."""
 
@@ -247,6 +311,9 @@ class TestEndToEnd(unittest.TestCase):
 
     def _run(self, file_path, row):
         env = {
+            "PATH": os.environ.get("PATH", ""),
+            "DISPLAY": os.environ.get("DISPLAY", ""),
+            "WAYLAND_DISPLAY": os.environ.get("WAYLAND_DISPLAY", ""),
             "ZED_FILE": str(file_path),
             "ZED_ROW": str(row),
             "ZED_WORKTREE_ROOT": str(self.root),
@@ -301,6 +368,32 @@ class TestEndToEnd(unittest.TestCase):
         rc, _, err = self._run(f, 1)
         self.assertEqual(rc, 1)
         self.assertIn("cannot parse", err)
+
+    def test_skip_fixtures_strips_setUp(self):
+        self._make("pyproject.toml", '[tool.dotted-path]\nskip_fixtures = true\n')
+        self._make("tests/__init__.py")
+        f = self._make("tests/test_views.py",
+                       "class TestUser:\n    def setUp(self):\n        pass\n")
+        rc, out, _ = self._run(f, 3)
+        self.assertEqual(rc, 0)
+        self.assertEqual(out, "tests.test_views.TestUser")
+
+    def test_skip_fixtures_keeps_test_method(self):
+        self._make("pyproject.toml", '[tool.dotted-path]\nskip_fixtures = true\n')
+        self._make("tests/__init__.py")
+        f = self._make("tests/test_views.py",
+                       "class TestUser:\n    def test_get(self):\n        pass\n")
+        rc, out, _ = self._run(f, 3)
+        self.assertEqual(rc, 0)
+        self.assertEqual(out, "tests.test_views.TestUser.test_get")
+
+    def test_no_skip_fixtures_keeps_setUp(self):
+        self._make("tests/__init__.py")
+        f = self._make("tests/test_views.py",
+                       "class TestUser:\n    def setUp(self):\n        pass\n")
+        rc, out, _ = self._run(f, 3)
+        self.assertEqual(rc, 0)
+        self.assertEqual(out, "tests.test_views.TestUser.setUp")
 
 
 if __name__ == "__main__":

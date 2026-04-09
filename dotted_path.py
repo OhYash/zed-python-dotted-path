@@ -91,21 +91,20 @@ def _parse_toml_value(raw):
     return raw
 
 
-def _root_from_pyproject(pyproject_path):
-    """Try to extract project root from pyproject.toml.
+def _parse_pyproject(pyproject_path):
+    """Parse pyproject.toml for [tool.dotted-path] config and setuptools root.
 
-    Returns resolved root Path or None.
-    Priority 1: [tool.dotted-path] root = "..."
-    Priority 2: [tool.setuptools.packages.find] where = [...]
+    Returns a dict with keys: root (Path or None), skip_fixtures (bool).
     """
     pyproject_dir = pyproject_path.parent
+    result = {"root": None, "skip_fixtures": False}
     try:
         text = pyproject_path.read_text(encoding="utf-8")
     except OSError:
-        return None
+        return result
 
     # Parse TOML manually (stdlib has tomllib only in 3.11+).
-    # We only need two specific keys, so we do a simple section-aware scan.
+    # We only need a few specific keys, so we do a simple section-aware scan.
     current_section = ""
     for line in text.splitlines():
         stripped = line.strip()
@@ -118,21 +117,25 @@ def _root_from_pyproject(pyproject_path):
         key = key.strip().lower()
         val = val.strip()
 
-        if current_section == "tool.dotted-path" and key == "root":
-            parsed = _parse_toml_value(val)
-            if isinstance(parsed, list):
-                parsed = parsed[0] if parsed else None
-            if parsed:
-                return (pyproject_dir / parsed).resolve()
+        if current_section == "tool.dotted-path":
+            if key == "root":
+                parsed = _parse_toml_value(val)
+                if isinstance(parsed, list):
+                    parsed = parsed[0] if parsed else None
+                if parsed:
+                    result["root"] = (pyproject_dir / parsed).resolve()
+            elif key == "skip_fixtures":
+                result["skip_fixtures"] = val.lower() == "true"
 
         if current_section == "tool.setuptools.packages.find" and key == "where":
-            parsed = _parse_toml_value(val)
-            if isinstance(parsed, list) and parsed:
-                return (pyproject_dir / parsed[0]).resolve()
-            if isinstance(parsed, str) and parsed:
-                return (pyproject_dir / parsed).resolve()
+            if result["root"] is None:
+                parsed = _parse_toml_value(val)
+                if isinstance(parsed, list) and parsed:
+                    result["root"] = (pyproject_dir / parsed[0]).resolve()
+                elif isinstance(parsed, str) and parsed:
+                    result["root"] = (pyproject_dir / parsed).resolve()
 
-    return None
+    return result
 
 
 def _root_from_markers(file_path, worktree_root):
@@ -175,26 +178,32 @@ def _root_from_init_heuristic(file_path, worktree_root):
 
 
 def resolve_project_root(file_path, worktree_root):
-    """Resolve the Python project root using the 5-level priority chain."""
+    """Resolve the Python project root using the 5-level priority chain.
+
+    Returns (root Path, config dict).
+    """
+    config = {"skip_fixtures": False}
+
     # Priority 1 & 2: pyproject.toml
     pyproject = _find_pyproject(file_path, worktree_root)
     if pyproject:
-        root = _root_from_pyproject(pyproject)
-        if root:
-            return root
+        parsed = _parse_pyproject(pyproject)
+        config["skip_fixtures"] = parsed["skip_fixtures"]
+        if parsed["root"]:
+            return parsed["root"], config
 
     # Priority 3: marker files
     root = _root_from_markers(file_path, worktree_root)
     if root:
-        return root
+        return root, config
 
     # Priority 4: __init__.py heuristic
     root = _root_from_init_heuristic(file_path, worktree_root)
     if root:
-        return root
+        return root, config
 
     # Priority 5: fallback
-    return worktree_root
+    return worktree_root, config
 
 
 def compute_module_path(file_path, project_root):
@@ -250,19 +259,49 @@ def _walk_scope(node, row, chain):
             return
 
 
+FIXTURE_METHODS = frozenset({
+    # unittest
+    "setUp", "tearDown", "setUpClass", "tearDownClass",
+    # pytest
+    "setup_method", "teardown_method", "setup_class", "teardown_class",
+    "setup", "teardown",
+})
+
+
+def strip_fixtures(scope_chain):
+    """Strip known fixture methods from the end of the scope chain.
+
+    Only strips if the parent scope looks like a test class (starts with "Test").
+    """
+    if len(scope_chain) >= 2 and scope_chain[-1] in FIXTURE_METHODS:
+        if scope_chain[-2].startswith("Test"):
+            return scope_chain[:-1]
+    return scope_chain
+
+
 def main():
     file_path, row, worktree_root = get_env()
-    project_root = resolve_project_root(file_path, worktree_root)
+    project_root, config = resolve_project_root(file_path, worktree_root)
     module_path = compute_module_path(file_path, project_root)
     scope_chain = resolve_scope(file_path, row)
+    if config["skip_fixtures"]:
+        scope_chain = strip_fixtures(scope_chain)
     parts = [module_path] + scope_chain if module_path else scope_chain
     dotted_path = ".".join(parts)
-    copy_to_clipboard(dotted_path)
+    cb_result = copy_to_clipboard(dotted_path)
+    if cb_result == "no_util":
+        print("Warning: no clipboard utility found (install xclip or xsel)", file=sys.stderr)
+    elif cb_result == "failed":
+        print("Warning: clipboard copy failed", file=sys.stderr)
     print(dotted_path)
 
 
 def copy_to_clipboard(text):
-    """Copy text to the system clipboard. Falls back to stdout-only silently."""
+    """Copy text to the system clipboard.
+
+    Returns: "ok" on success, "no_util" if no clipboard utility found,
+             "failed" if a utility was found but the copy command failed.
+    """
     # WSL detection
     is_wsl = "microsoft" in platform.uname().release.lower()
 
@@ -278,12 +317,17 @@ def copy_to_clipboard(text):
         if shutil.which("xsel"):
             candidates.append(["xsel", "--clipboard", "--input"])
 
+    if not candidates:
+        return "no_util"
+
     for cmd in candidates:
         try:
             subprocess.run(cmd, input=text.encode(), check=True)
-            return
+            return "ok"
         except (OSError, subprocess.CalledProcessError):
             continue
+
+    return "failed"
 
 
 if __name__ == "__main__":

@@ -50,10 +50,13 @@ To set a custom project root (e.g. for src-layout or Django projects), add to yo
 
 ```toml
 [tool.dotted-path]
-root = "src"   # relative to pyproject.toml location
+root = "src"          # relative to pyproject.toml location
+skip_fixtures = true  # strip setUp/tearDown from test classes
 ```
 
-Without this, the script auto-detects using marker files and `__init__.py` heuristics.
+`skip_fixtures` omits known test fixture methods (`setUp`, `tearDown`, `setUpClass`, `tearDownClass`, and their pytest equivalents) when the cursor is inside a `Test*` class, returning just the class path instead.
+
+Without `root`, the script auto-detects using marker files and `__init__.py` heuristics.
 
 ## Requirements
 
