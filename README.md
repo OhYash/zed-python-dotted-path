@@ -25,12 +25,29 @@ Place your cursor inside a class or function, trigger the task, and get `mypacka
 
 3. (Optional) Bind a key in `~/.config/zed/keymap.json`:
 
+**Linux/Windows** — matches PyCharm's "Copy Reference" shortcut:
+
 ```json
 [
   {
     "context": "Editor && extension==py",
     "bindings": {
-      "ctrl-shift-c": ["task::Spawn", { "task_name": "Copy Python dotted path" }]
+      // PyCharm: Ctrl+Shift+Alt+C = Copy Reference
+      "ctrl-shift-alt-c": ["task::Spawn", { "task_name": "Copy Python dotted path" }]
+    }
+  }
+]
+```
+
+**macOS**:
+
+```json
+[
+  {
+    "context": "Editor && extension==py",
+    "bindings": {
+      // PyCharm: Cmd+Shift+Alt+C = Copy Reference
+      "cmd-shift-alt-c": ["task::Spawn", { "task_name": "Copy Python dotted path" }]
     }
   }
 ]
