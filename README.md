@@ -16,7 +16,8 @@ Place your cursor inside a class or function, trigger the task, and get `mypacka
     "label": "Copy Python dotted path",
     "command": "python3",
     "args": ["/path/to/dotted_path.py"],
-    "hide": "on_success",
+    "reveal": "never",
+    "hide": "always",
     "tags": ["python-dotted-path"]
   }
 ]
@@ -70,6 +71,31 @@ Without `root`, the script auto-detects using marker files and `__init__.py` heu
 | Inside `MyClass.my_method` in `pkg/utils.py` | `pkg.utils.MyClass.my_method` |
 | Module-level code in `pkg/utils.py` | `pkg.utils` |
 | Inside nested class in `pkg/__init__.py` | `pkg.OuterClass.InnerClass` |
+
+## FAQ
+
+**Nothing happens when I trigger the task.**
+
+The recommended config uses `"reveal": "never"` which hides the terminal completely. To debug, temporarily change to `"reveal": "always"` and `"hide": "never"` in your `tasks.json` to see the script output. Common issues:
+
+- **Missing clipboard utility**: install `xclip` or `xsel` (`sudo apt install xclip` on Debian/Ubuntu, `sudo pacman -S xclip` on Arch). The path still prints to the terminal but won't reach your clipboard without one.
+- **Wrong Python path**: make sure the `args` path in `tasks.json` points to where you actually saved `dotted_path.py`.
+- **File not in a Python project**: if there's no `__init__.py`, `pyproject.toml`, or marker files, the script falls back to the Zed worktree root, which may not produce the path you expect. Add a `[tool.dotted-path]` section to your `pyproject.toml` to set the root explicitly.
+
+**The path includes `setUp` / `tearDown` instead of the test class.**
+
+Add to the `pyproject.toml` closest to your source files:
+
+```toml
+[tool.dotted-path]
+skip_fixtures = true
+```
+
+This strips known fixture methods when the cursor is inside a `Test*` class. If your project has multiple `pyproject.toml` files (e.g. a monorepo), add it to the one closest to your test files.
+
+**How do I know the path was copied?**
+
+Zed tasks don't support in-editor notifications. The path is silently copied to your clipboard. If you want visual confirmation, change the task config to `"reveal": "no_focus"` — the terminal tab will briefly appear in the background without stealing focus.
 
 ## License
 

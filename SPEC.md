@@ -187,7 +187,8 @@ Users add to `~/.config/zed/tasks.json` (global) or `.zed/tasks.json` (project):
     "label": "Copy Python dotted path",
     "command": "python3",
     "args": ["/path/to/dotted_path.py"],
-    "hide": "on_success",
+    "reveal": "never",
+    "hide": "always",
     "tags": ["python-dotted-path"]
   }
 ]
